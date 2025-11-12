@@ -161,27 +161,30 @@ function startApp(){
   function parseNumber(val){const m=String(val).match(/-?\d+(?:[.,]\d+)?/);return m?parseFloat(m[0].replace(',','.')):NaN}
   function fmt(n,dec=1){return Number.isFinite(n)?(n.toFixed(dec).replace(".",",")):"—"}
 
-  // normalizacja (polskie znaki → ASCII, reszta na "_")
+  // normalizacja (PL znaki → ASCII; reszta → "_")
   function norm(s){
     return String(s)
       .toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // usuń diakrytyki
-      .replace(/[^a-z0-9/]+/g,'_')                    // wszystko inne → _
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9/]+/g,'_')
       .replace(/_+/g,'_');
   }
 
-  // Detektory tematów (bardzo tolerancyjne)
+  // Detektory tematów (rozszerzone)
   const isBattVoltage = (t) => {
-    // złapie np.: .../sensor/napi__cie_baterii/state, .../sensor/battery_voltage/state
     return t.includes("/sensor/") && (
-      (t.includes("napi") && (t.includes("bater") || t.includes("batt") || t.includes("bat"))) ||
+      t.includes("napi") && (t.includes("bater") || t.includes("batt") || t.includes("bat")) ||
       (t.includes("battery") && (t.includes("volt") || t.includes("voltage")))
     );
   };
+
   const isChargeCurrent = (t) => {
-    // złapie np.: .../sensor/pr__d___adowania/state, .../sensor/charging_current/state
+    // łapie: prad_ladowania, pr_d_adowania, .../charging_current, charge_current, itp.
     return t.includes("/sensor/") && (
-      (t.includes("prad") && (t.includes("ladowan") || t.includes("adowan"))) ||
+      t.includes("prad_ladowania") ||
+      t.includes("pr_d_adowania") ||
+      (t.includes("prad") && (t.includes("ladowan") || t.includes("_adowan"))) ||
+      (t.includes("pr") && t.includes("adowania")) ||
       (t.includes("current") && (t.includes("charg") || t.includes("charge")))
     );
   };
@@ -214,8 +217,8 @@ function startApp(){
       if(t.includes("moc") && (t.includes("ladowan")||t.includes("adowan"))) { topics.moc_ladowania=topic; els.power.textContent=fmt(parseNumber(payload),1); return; }
       if((t.includes("procent")||t.includes("soc")) && (t.includes("bater")||t.includes("batt")||t.includes("bat"))) { topics.procent_soc=topic; els.soc.textContent=fmt(parseNumber(payload),1); return; }
 
-      // NOWE: napięcie baterii & prąd ładowania
-      if(isBattVoltage(t)) { topics.napiecie_batt=topic; els.bat_v.textContent=fmt(parseNumber(payload),1); return; }
+      // Napięcie baterii & Prąd ładowania
+      if(isBattVoltage(t))   { topics.napiecie_batt=topic; els.bat_v.textContent=fmt(parseNumber(payload),1); return; }
       if(isChargeCurrent(t)) { topics.prad_ladowania=topic; els.bat_a.textContent=fmt(parseNumber(payload),1); return; }
     }
 
