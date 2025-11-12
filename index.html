@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sterownik – Mateusz Mendocha</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    :root{--bg:#0d1117;--card:#161b22;--line:#30363d;--text:#c9d1d9;--muted:#8b949e;--blue:#1f6feb;--ok:#2ea043;--err:#ffa657}
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue","Noto Sans",sans-serif}
+    header{padding:18px 16px;border-bottom:1px solid var(--line);text-align:center}
+    h1{margin:0;font-size:24px} .status{margin-top:6px;font-size:13px;color:var(--muted)}
+    .wrap{max-width:1100px;margin:20px auto;padding:0 12px}
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+    .title{font-size:14px;color:#9cdcfe;margin:0 0 8px}
+    .value{font-weight:700;font-size:22px}
+    .unit{font-size:13px;color:var(--muted);margin-left:6px}
+    .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .btn{padding:10px 14px;border:1px solid var(--line);background:#0b284f;color:#cfe6ff;border-radius:10px;cursor:pointer}
+    .btn.off{background:#3a0b0b;color:#ffd2d2}
+    .select{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b0f16;color:var(--text);width:100%}
+    .input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b0f16;color:var(--text);width:100%}
+    .small{font-size:12px;color:var(--muted);margin-top:8px}
+    .ok{color:var(--ok)} .err{color:var(--err)}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🌬️ Sterownik – Mateusz Mendocha</h1>
+    <div id="mqttStatus" class="status">MQTT: łączenie…</div>
+  </header>
+
+  <div class="wrap">
+    <div class="cards">
+      <div class="card">
+        <p class="title">Wiatrak (energia)</p>
+        <div class="value"><span id="kwh">—</span><span class="unit">kWh</span></div>
+      </div>
+      <div class="card">
+        <p class="title">Moc ładowania</p>
+        <div class="value"><span id="power">—</span><span class="unit">W</span></div>
+      </div>
+      <div class="card">
+        <p class="title">Naładowanie baterii</p>
+        <div class="value"><span id="soc">—</span><span class="unit">%</span></div>
+      </div>
+      <div class="card">
+        <p class="title">Napięcie baterii</p>
+        <div class="value"><span id="bat_v">—</span><span class="unit">V</span></div>
+      </div>
+      <div class="card">
+        <p class="title">Prąd ładowania</p>
+        <div class="value"><span id="bat_a">—</span><span class="unit">A</span></div>
+      </div>
+    </div>
+
+    <div class="cards" style="margin-top:12px;">
+      <div class="card">
+        <p class="title">Hamulec turbiny</p>
+        <div class="row">
+          <div class="value" id="brakeState">—</div>
+          <button class="btn" id="btnBrake">Przełącz</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="title">Wyjście LOAD</p>
+        <div class="row">
+          <div class="value" id="loadState">—</div>
+          <button class="btn" id="btnLoad">Przełącz</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="title">Tryb napięcia systemu</p>
+        <div class="row">
+          <select id="selSystem" class="select">
+            <option>Auto</option>
+            <option>24V</option>
+            <option>48V</option>
+          </select>
+          <button class="btn" id="btnSaveSystem">Zapisz</button>
+        </div>
+        <div class="small" id="currSystem">Bieżący tryb: —</div>
+      </div>
+
+      <div class="card">
+        <p class="title">Typ baterii</p>
+        <div class="row">
+          <select id="selBattery" class="select">
+            <option>B0</option><option>B1</option><option>B2</option><option>B3</option><option>B4</option>
+          </select>
+          <button class="btn" id="btnSaveBatt">Zapisz</button>
+        </div>
+        <div class="small" id="currBatt">Bieżący typ: —</div>
+      </div>
+
+      <div class="card">
+        <p class="title">Battery Full Voltage</p>
+        <div class="row" style="gap:8px;">
+          <input id="numFull" class="input" type="number" step="0.1" min="20" max="72" placeholder="np. 55.2" />
+          <button class="btn" id="btnSaveFull">Zapisz</button>
+        </div>
+        <div class="small" id="currFull">Bieżąca wartość: —</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* === KONFIG === */
+const MQTT_URL   = "wss://broker.hivemq.com:8884/mqtt";
+const PREFIX     = "mateusz mendocha";     // dokładnie jak w YAML
+const CLIENT_ID  = "webdash_"+Math.random().toString(16).slice(2);
+
+/* === POMOCNICZE === */
+const els = {
+  kwh: q("#kwh"), power: q("#power"), soc: q("#soc"),
+  bat_v: q("#bat_v"), bat_a: q("#bat_a"),
+  brakeState: q("#brakeState"), btnBrake: q("#btnBrake"),
+  loadState: q("#loadState"), btnLoad: q("#btnLoad"),
+  selSystem: q("#selSystem"), btnSaveSystem: q("#btnSaveSystem"), currSystem: q("#currSystem"),
+  selBattery: q("#selBattery"), btnSaveBatt: q("#btnSaveBatt"), currBatt: q("#currBatt"),
+  numFull: q("#numFull"), btnSaveFull: q("#btnSaveFull"), currFull: q("#currFull"),
+  mqttStatus: q("#mqttStatus")
+};
+function q(s){return document.querySelector(s)}
+function parseNumber(val){const m=String(val).match(/-?\d+(?:[.,]\d+)?/);return m?parseFloat(m[0].replace(',','.')):NaN}
+function fmt(n,dec=1){return Number.isFinite(n)?(n.toFixed(dec).replace(".",",")):"—"}
+
+/* Normalizacja „dziwnych” nazw tematów (ł, ć → podkreślenia itd.) */
+function norm(s){
+  return String(s)
+   .toLowerCase()
+   .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // zdejmij diakrytyki
+   .replace(/[^a-z0-9/]+/g,'_')                     // resztę na _
+   .replace(/_+/g,'_');
+}
+
+/* === MQTT === */
+const client = mqtt.connect(MQTT_URL, { clientId: CLIENT_ID, clean:true, reconnectPeriod:3000 });
+client.on("connect", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="ok">połączono</span>'; client.subscribe(`${PREFIX}/#`); });
+client.on("reconnect", ()=>{ els.mqttStatus.textContent = "MQTT: ponawianie…"; });
+client.on("close", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="err">rozłączono</span>'; });
+client.on("error", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="err">błąd</span>'; });
+
+/* Wysyłki */
+function pub(topic,payload){ client.publish(topic, String(payload), { qos:0, retain:false }); }
+
+/* Automatyczne wykrycie identyfikatorów encji (z uwagi na polskie litery) */
+let topics = {
+  // sensory
+  wiatrak_kwh: null,
+  moc_ladowania: null,
+  procent_soc: null,
+  napiecie_batt: null,
+  prad_ladowania: null,
+  // przełączniki
+  hamulec_state: null, hamulec_cmd: null,
+  load_state: null, load_cmd: null,
+  // selecty / number
+  system_state: null, system_cmd: null,
+  battery_state: null, battery_cmd: null,
+  full_state: null, full_cmd: null
+};
+
+client.on("message",(topic,payloadBuf)=>{
+  const payload = payloadBuf.toString();
+  const t = norm(topic);
+  if(!t.endsWith("/state")) return;
+
+  // dopasowania heurystyczne
+  if (t.includes("/sensor/")) {
+    if(t.includes("wiatrak") && t.includes("kwh")) { topics.wiatrak_kwh = topic; els.kwh.textContent = fmt(parseNumber(payload),1); return; }
+    if(t.includes("moc") && t.includes("adowania")) { topics.moc_ladowania = topic; els.power.textContent = fmt(parseNumber(payload),1); return; }
+    if((t.includes("procent")||t.includes("soc")) && t.includes("baterii")) { topics.procent_soc = topic; els.soc.textContent = fmt(parseNumber(payload),1); return; }
+    if(t.includes("napiecie") && t.includes("baterii")) { topics.napiecie_batt = topic; els.bat_v.textContent = fmt(parseNumber(payload),1); return; }
+    if(t.includes("prad") && t.includes("adowania")) { topics.prad_ladowania = topic; els.bat_a.textContent = fmt(parseNumber(payload),1); return; }
+  }
+
+  if (t.includes("/switch/")) {
+    if(t.includes("hamulec")) {
+      topics.hamulec_state = topic;
+      topics.hamulec_cmd = topic.replace(/\/state$/,"/command");
+      setSwitchUI(els.brakeState, els.btnBrake, payload);
+      return;
+    }
+    if(t.includes("load") || t.includes("wyjscie")) {
+      topics.load_state = topic;
+      topics.load_cmd = topic.replace(/\/state$/,"/command");
+      setSwitchUI(els.loadState, els.btnLoad, payload);
+      return;
+    }
+  }
+
+  if (t.includes("/select/")) {
+    if(t.includes("tryb") || t.includes("systemu") || t.includes("napiecia")) {
+      topics.system_state = topic;
+      topics.system_cmd = topic.replace(/\/state$/,"/command");
+      els.currSystem.textContent = "Bieżący tryb: "+payload;
+      return;
+    }
+    if(t.includes("typ") && t.includes("baterii")) {
+      topics.battery_state = topic;
+      topics.battery_cmd = topic.replace(/\/state$/,"/command");
+      els.currBatt.textContent = "Bieżący typ: "+payload;
+      return;
+    }
+  }
+
+  if (t.includes("/number/") && t.includes("battery_full_voltage")) {
+    topics.full_state = topic;
+    topics.full_cmd = topic.replace(/\/state$/,"/command");
+    const v = parseNumber(payload);
+    if(Number.isFinite(v)) els.currFull.textContent = "Bieżąca wartość: "+fmt(v,1)+" V";
+  }
+});
+
+/* UI przełączników */
+function setSwitchUI(labelEl, btnEl, state){
+  const on = String(state).toUpperCase()==="ON";
+  labelEl.textContent = on ? "Włączone" : "Wyłączone";
+  btnEl.classList.toggle("off", on);
+  btnEl.textContent = "Przełącz";
+}
+
+/* Klik – hamulec */
+els.btnBrake.onclick = ()=>{
+  if(!topics.hamulec_cmd || !topics.hamulec_state) return;
+  // odczytaj aktualny stan z labelki
+  const curr = els.brakeState.textContent.includes("Włączone");
+  pub(topics.hamulec_cmd, curr ? "OFF" : "ON");
+};
+/* Klik – LOAD */
+els.btnLoad.onclick = ()=>{
+  if(!topics.load_cmd || !topics.load_state) return;
+  const curr = els.loadState.textContent.includes("Włączone");
+  pub(topics.load_cmd, curr ? "OFF" : "ON");
+};
+
+/* Zapis trybu napięcia systemu */
+els.btnSaveSystem.onclick = ()=>{
+  if(!topics.system_cmd) return;
+  pub(topics.system_cmd, els.selSystem.value);
+};
+/* Zapis typu baterii */
+els.btnSaveBatt.onclick = ()=>{
+  if(!topics.battery_cmd) return;
+  pub(topics.battery_cmd, els.selBattery.value);
+};
+/* Zapis Battery Full Voltage (liczba) */
+els.btnSaveFull.onclick = ()=>{
+  if(!topics.full_cmd) return;
+  const v = parseNumber(els.numFull.value);
+  if(Number.isFinite(v)) pub(topics.full_cmd, v.toFixed(1));
+};
+</script>
+</body>
+</html>
