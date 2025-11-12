@@ -23,9 +23,27 @@
     .input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#0b0f16;color:var(--text);width:100%}
     .small{font-size:12px;color:var(--muted);margin-top:8px}
     .ok{color:var(--ok)} .err{color:var(--err)}
+
+    /* blokada hasłem */
+    #lock{position:fixed;inset:0;background:#0b0f1a;display:flex;align-items:center;justify-content:center;z-index:9999}
+    #lock .box{background:#111727;border:1px solid var(--line);color:var(--text);padding:22px;border-radius:12px;width:320px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    #lock h3{margin:0 0 10px}
+    #lock input{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#0b0f16;color:var(--text);margin:10px 0}
+    #lock button{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:#0b284f;color:#cfe6ff;cursor:pointer}
+    #lock p{min-height:1.1em;font-size:13px;color:#ffb4a9;margin:8px 0 0}
   </style>
 </head>
 <body>
+  <!-- BLOKADA HASŁEM -->
+  <div id="lock">
+    <div class="box">
+      <h3>🔐 Dostęp chroniony</h3>
+      <input id="pwd" type="password" placeholder="Hasło" autocomplete="current-password" />
+      <button id="unlockBtn">Odblokuj</button>
+      <p id="lockMsg"></p>
+    </div>
+  </div>
+
   <header>
     <h1>🌬️ Sterownik – Mateusz Mendocha</h1>
     <div id="mqttStatus" class="status">MQTT: łączenie…</div>
@@ -108,152 +126,165 @@
   </div>
 
 <script>
-/* === KONFIG === */
-const MQTT_URL   = "wss://broker.hivemq.com:8884/mqtt";
-const PREFIX     = "mateusz mendocha";     // dokładnie jak w YAML
-const CLIENT_ID  = "webdash_"+Math.random().toString(16).slice(2);
-
-/* === POMOCNICZE === */
-const els = {
-  kwh: q("#kwh"), power: q("#power"), soc: q("#soc"),
-  bat_v: q("#bat_v"), bat_a: q("#bat_a"),
-  brakeState: q("#brakeState"), btnBrake: q("#btnBrake"),
-  loadState: q("#loadState"), btnLoad: q("#btnLoad"),
-  selSystem: q("#selSystem"), btnSaveSystem: q("#btnSaveSystem"), currSystem: q("#currSystem"),
-  selBattery: q("#selBattery"), btnSaveBatt: q("#btnSaveBatt"), currBatt: q("#currBatt"),
-  numFull: q("#numFull"), btnSaveFull: q("#btnSaveFull"), currFull: q("#currFull"),
-  mqttStatus: q("#mqttStatus")
-};
-function q(s){return document.querySelector(s)}
-function parseNumber(val){const m=String(val).match(/-?\d+(?:[.,]\d+)?/);return m?parseFloat(m[0].replace(',','.')):NaN}
-function fmt(n,dec=1){return Number.isFinite(n)?(n.toFixed(dec).replace(".",",")):"—"}
-
-/* Normalizacja „dziwnych” nazw tematów (ł, ć → podkreślenia itd.) */
-function norm(s){
-  return String(s)
-   .toLowerCase()
-   .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // zdejmij diakrytyki
-   .replace(/[^a-z0-9/]+/g,'_')                     // resztę na _
-   .replace(/_+/g,'_');
+/* ===== BLOKADA HASŁEM ===== */
+const PASSWORD = "FEH2025";
+const lockEl = document.getElementById("lock");
+const lockMsg = document.getElementById("lockMsg");
+function unlockWith(v){
+  const ok = String(v||"").trim() === PASSWORD;
+  if(ok){ lockEl.style.display="none"; startApp(); }
+  else { lockMsg.textContent = "❌ Złe hasło"; }
+  return ok;
 }
+document.getElementById("unlockBtn").onclick = ()=>unlockWith(document.getElementById("pwd").value);
+document.getElementById("pwd").onkeydown = (e)=>{ if(e.key==="Enter") unlockWith(e.target.value); };
 
-/* === MQTT === */
-const client = mqtt.connect(MQTT_URL, { clientId: CLIENT_ID, clean:true, reconnectPeriod:3000 });
-client.on("connect", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="ok">połączono</span>'; client.subscribe(`${PREFIX}/#`); });
-client.on("reconnect", ()=>{ els.mqttStatus.textContent = "MQTT: ponawianie…"; });
-client.on("close", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="err">rozłączono</span>'; });
-client.on("error", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="err">błąd</span>'; });
+/* ===== APLIKACJA ===== */
+function startApp(){
+  /* === KONFIG === */
+  const MQTT_URL   = "wss://broker.hivemq.com:8884/mqtt";
+  const PREFIX     = "mateusz mendocha";     // dokładnie jak w YAML
+  const CLIENT_ID  = "webdash_"+Math.random().toString(16).slice(2);
 
-/* Wysyłki */
-function pub(topic,payload){ client.publish(topic, String(payload), { qos:0, retain:false }); }
+  /* === POMOCNICZE === */
+  const els = {
+    kwh: q("#kwh"), power: q("#power"), soc: q("#soc"),
+    bat_v: q("#bat_v"), bat_a: q("#bat_a"),
+    brakeState: q("#brakeState"), btnBrake: q("#btnBrake"),
+    loadState: q("#loadState"), btnLoad: q("#btnLoad"),
+    selSystem: q("#selSystem"), btnSaveSystem: q("#btnSaveSystem"), currSystem: q("#currSystem"),
+    selBattery: q("#selBattery"), btnSaveBatt: q("#btnSaveBatt"), currBatt: q("#currBatt"),
+    numFull: q("#numFull"), btnSaveFull: q("#btnSaveFull"), currFull: q("#currFull"),
+    mqttStatus: q("#mqttStatus")
+  };
+  function q(s){return document.querySelector(s)}
+  function parseNumber(val){const m=String(val).match(/-?\d+(?:[.,]\d+)?/);return m?parseFloat(m[0].replace(',','.')):NaN}
+  function fmt(n,dec=1){return Number.isFinite(n)?(n.toFixed(dec).replace(".",",")):"—"}
 
-/* Automatyczne wykrycie identyfikatorów encji (z uwagi na polskie litery) */
-let topics = {
-  // sensory
-  wiatrak_kwh: null,
-  moc_ladowania: null,
-  procent_soc: null,
-  napiecie_batt: null,
-  prad_ladowania: null,
-  // przełączniki
-  hamulec_state: null, hamulec_cmd: null,
-  load_state: null, load_cmd: null,
-  // selecty / number
-  system_state: null, system_cmd: null,
-  battery_state: null, battery_cmd: null,
-  full_state: null, full_cmd: null
-};
-
-client.on("message",(topic,payloadBuf)=>{
-  const payload = payloadBuf.toString();
-  const t = norm(topic);
-  if(!t.endsWith("/state")) return;
-
-  // dopasowania heurystyczne
-  if (t.includes("/sensor/")) {
-    if(t.includes("wiatrak") && t.includes("kwh")) { topics.wiatrak_kwh = topic; els.kwh.textContent = fmt(parseNumber(payload),1); return; }
-    if(t.includes("moc") && t.includes("adowania")) { topics.moc_ladowania = topic; els.power.textContent = fmt(parseNumber(payload),1); return; }
-    if((t.includes("procent")||t.includes("soc")) && t.includes("baterii")) { topics.procent_soc = topic; els.soc.textContent = fmt(parseNumber(payload),1); return; }
-    if(t.includes("napiecie") && t.includes("baterii")) { topics.napiecie_batt = topic; els.bat_v.textContent = fmt(parseNumber(payload),1); return; }
-    if(t.includes("prad") && t.includes("adowania")) { topics.prad_ladowania = topic; els.bat_a.textContent = fmt(parseNumber(payload),1); return; }
+  // normalizacja (polskie znaki, spacje → _)
+  function norm(s){
+    return String(s)
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^a-z0-9/]+/g,'_')
+      .replace(/_+/g,'_');
   }
 
-  if (t.includes("/switch/")) {
-    if(t.includes("hamulec")) {
-      topics.hamulec_state = topic;
-      topics.hamulec_cmd = topic.replace(/\/state$/,"/command");
-      setSwitchUI(els.brakeState, els.btnBrake, payload);
-      return;
+  // helpery dopasowań tematów (bardziej tolerancyjne)
+  const isBattVoltage = (t)=>{
+    return t.includes("/sensor/") && (
+      (t.includes("napie") && (t.includes("bater") || t.includes("batt"))) ||
+      (t.includes("battery") && (t.includes("volt") || t.includes("v")))
+    );
+  };
+  const isChargeCurrent = (t)=>{
+    return t.includes("/sensor/") && (
+      (t.includes("prad") && (t.includes("ladowania") || t.includes("adowania"))) ||
+      (t.includes("current") && (t.includes("charge") || t.includes("charging")))
+    );
+  };
+
+  /* === MQTT === */
+  const client = mqtt.connect(MQTT_URL, { clientId: CLIENT_ID, clean:true, reconnectPeriod:3000 });
+  client.on("connect", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="ok">połączono</span>'; client.subscribe(`${PREFIX}/#`); });
+  client.on("reconnect", ()=>{ els.mqttStatus.textContent = "MQTT: ponawianie…"; });
+  client.on("close", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="err">rozłączono</span>'; });
+  client.on("error", ()=>{ els.mqttStatus.innerHTML = 'MQTT: <span class="err">błąd</span>'; });
+
+  function pub(topic,payload){ client.publish(topic, String(payload), { qos:0, retain:false }); }
+
+  let topics = {
+    wiatrak_kwh:null, moc_ladowania:null, procent_soc:null,
+    napiecie_batt:null, prad_ladowania:null,
+    hamulec_state:null, hamulec_cmd:null, load_state:null, load_cmd:null,
+    system_state:null, system_cmd:null, battery_state:null, battery_cmd:null,
+    full_state:null, full_cmd:null
+  };
+
+  client.on("message",(topic,payloadBuf)=>{
+    const payload = payloadBuf.toString();
+    const t = norm(topic);
+    if(!t.endsWith("/state")) return;
+
+    // Energia, moc, SOC (jak było)
+    if (t.includes("/sensor/")) {
+      if(t.includes("wiatrak") && t.includes("kwh")) { topics.wiatrak_kwh=topic; els.kwh.textContent=fmt(parseNumber(payload),1); return; }
+      if(t.includes("moc") && (t.includes("ladowania")||t.includes("adowania"))) { topics.moc_ladowania=topic; els.power.textContent=fmt(parseNumber(payload),1); return; }
+      if((t.includes("procent")||t.includes("soc")) && (t.includes("bater")||t.includes("batt"))) { topics.procent_soc=topic; els.soc.textContent=fmt(parseNumber(payload),1); return; }
+
+      // NOWE: Napięcie baterii i Prąd ładowania – tolerancyjne dopasowanie
+      if(isBattVoltage(t)) { topics.napiecie_batt=topic; els.bat_v.textContent=fmt(parseNumber(payload),1); return; }
+      if(isChargeCurrent(t)) { topics.prad_ladowania=topic; els.bat_a.textContent=fmt(parseNumber(payload),1); return; }
     }
-    if(t.includes("load") || t.includes("wyjscie")) {
-      topics.load_state = topic;
-      topics.load_cmd = topic.replace(/\/state$/,"/command");
-      setSwitchUI(els.loadState, els.btnLoad, payload);
-      return;
+
+    if (t.includes("/switch/")) {
+      if(t.includes("hamulec")) {
+        topics.hamulec_state = topic;
+        topics.hamulec_cmd = topic.replace(/\/state$/,"/command");
+        setSwitchUI(els.brakeState, els.btnBrake, payload);
+        return;
+      }
+      if(t.includes("load") || t.includes("wyjscie")) {
+        topics.load_state = topic;
+        topics.load_cmd = topic.replace(/\/state$/,"/command");
+        setSwitchUI(els.loadState, els.btnLoad, payload);
+        return;
+      }
     }
+
+    if (t.includes("/select/")) {
+      if(t.includes("tryb") || t.includes("systemu") || t.includes("napiecia")) {
+        topics.system_state = topic;
+        topics.system_cmd = topic.replace(/\/state$/,"/command");
+        els.currSystem.textContent = "Bieżący tryb: "+payload;
+        return;
+      }
+      if(t.includes("typ") && t.includes("baterii")) {
+        topics.battery_state = topic;
+        topics.battery_cmd = topic.replace(/\/state$/,"/command");
+        els.currBatt.textContent = "Bieżący typ: "+payload;
+        return;
+      }
+    }
+
+    if (t.includes("/number/") && t.includes("battery_full_voltage")) {
+      topics.full_state = topic;
+      topics.full_cmd = topic.replace(/\/state$/,"/command");
+      const v = parseNumber(payload);
+      if(Number.isFinite(v)) els.currFull.textContent = "Bieżąca wartość: "+fmt(v,1)+" V";
+    }
+  });
+
+  function setSwitchUI(labelEl, btnEl, state){
+    const on = String(state).toUpperCase()==="ON";
+    labelEl.textContent = on ? "Włączone" : "Wyłączone";
+    btnEl.classList.toggle("off", on);
+    btnEl.textContent = "Przełącz";
   }
 
-  if (t.includes("/select/")) {
-    if(t.includes("tryb") || t.includes("systemu") || t.includes("napiecia")) {
-      topics.system_state = topic;
-      topics.system_cmd = topic.replace(/\/state$/,"/command");
-      els.currSystem.textContent = "Bieżący tryb: "+payload;
-      return;
-    }
-    if(t.includes("typ") && t.includes("baterii")) {
-      topics.battery_state = topic;
-      topics.battery_cmd = topic.replace(/\/state$/,"/command");
-      els.currBatt.textContent = "Bieżący typ: "+payload;
-      return;
-    }
-  }
-
-  if (t.includes("/number/") && t.includes("battery_full_voltage")) {
-    topics.full_state = topic;
-    topics.full_cmd = topic.replace(/\/state$/,"/command");
-    const v = parseNumber(payload);
-    if(Number.isFinite(v)) els.currFull.textContent = "Bieżąca wartość: "+fmt(v,1)+" V";
-  }
-});
-
-/* UI przełączników */
-function setSwitchUI(labelEl, btnEl, state){
-  const on = String(state).toUpperCase()==="ON";
-  labelEl.textContent = on ? "Włączone" : "Wyłączone";
-  btnEl.classList.toggle("off", on);
-  btnEl.textContent = "Przełącz";
+  // klik – hamulec
+  els.btnBrake.onclick = ()=>{
+    if(!topics.hamulec_cmd || !topics.hamulec_state) return;
+    const curr = els.brakeState.textContent.includes("Włączone");
+    pub(topics.hamulec_cmd, curr ? "OFF" : "ON");
+  };
+  // klik – LOAD
+  els.btnLoad.onclick = ()=>{
+    if(!topics.load_cmd || !topics.load_state) return;
+    const curr = els.loadState.textContent.includes("Włączone");
+    pub(topics.load_cmd, curr ? "OFF" : "ON");
+  };
+  // zapis trybu napięcia systemu
+  els.btnSaveSystem.onclick = ()=>{ if(topics.system_cmd) pub(topics.system_cmd, els.selSystem.value); };
+  // zapis typu baterii
+  els.btnSaveBatt.onclick   = ()=>{ if(topics.battery_cmd) pub(topics.battery_cmd, els.selBattery.value); };
+  // zapis battery full voltage
+  els.btnSaveFull.onclick   = ()=>{
+    if(!topics.full_cmd) return;
+    const v = parseNumber(els.numFull.value);
+    if(Number.isFinite(v)) pub(topics.full_cmd, v.toFixed(1));
+  };
 }
-
-/* Klik – hamulec */
-els.btnBrake.onclick = ()=>{
-  if(!topics.hamulec_cmd || !topics.hamulec_state) return;
-  // odczytaj aktualny stan z labelki
-  const curr = els.brakeState.textContent.includes("Włączone");
-  pub(topics.hamulec_cmd, curr ? "OFF" : "ON");
-};
-/* Klik – LOAD */
-els.btnLoad.onclick = ()=>{
-  if(!topics.load_cmd || !topics.load_state) return;
-  const curr = els.loadState.textContent.includes("Włączone");
-  pub(topics.load_cmd, curr ? "OFF" : "ON");
-};
-
-/* Zapis trybu napięcia systemu */
-els.btnSaveSystem.onclick = ()=>{
-  if(!topics.system_cmd) return;
-  pub(topics.system_cmd, els.selSystem.value);
-};
-/* Zapis typu baterii */
-els.btnSaveBatt.onclick = ()=>{
-  if(!topics.battery_cmd) return;
-  pub(topics.battery_cmd, els.selBattery.value);
-};
-/* Zapis Battery Full Voltage (liczba) */
-els.btnSaveFull.onclick = ()=>{
-  if(!topics.full_cmd) return;
-  const v = parseNumber(els.numFull.value);
-  if(Number.isFinite(v)) pub(topics.full_cmd, v.toFixed(1));
-};
 </script>
 </body>
 </html>
