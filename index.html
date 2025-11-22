@@ -144,7 +144,7 @@ document.getElementById("pwd").onkeydown = (e)=>{ if(e.key==="Enter") unlockWith
 /* ===== APLIKACJA ===== */
 function startApp(){
   const MQTT_URL  = "wss://broker.hivemq.com:8884/mqtt";
-  const PREFIX    = "mateusz mendocha";   // dokładnie jak w YAML
+  const PREFIX    = "sterownik_wiatrowy_1";   // dokładnie jak w YAML
   const CLIENT_ID = "webdash_"+Math.random().toString(16).slice(2);
 
   const els = {
